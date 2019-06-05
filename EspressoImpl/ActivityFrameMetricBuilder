@@ -1,0 +1,92 @@
+package com.mmt.travel.app.testmetrictracer;
+
+import android.os.Build;
+import android.util.Log;
+
+import com.flipkart.batching.toolbox.LogUtil;
+import com.makemytrip.BuildConfig;
+import com.mmt.travel.app.testmetrictracer.metricpojo.KeyMetric;
+import com.mmt.travel.app.testmetrictracer.metricpojo.MetricPayload;
+import com.mmt.travel.app.testmetrictracer.metricpojo.MetricsDeviceMeta;
+import com.mmt.travel.app.testmetrictracer.util.CreateDBRequest;
+
+import java.text.DecimalFormat;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Queue;
+
+/**
+ * Created by mmt6054 on 13/07/18.
+ */
+
+public class ActivityFrameMetricBuilder {
+
+    static DecimalFormat decimalFormat = new DecimalFormat("#.##");
+    static List<KeyMetric> keyMetricList = new ArrayList<>();
+    static int counter =0;
+    static Queue<MetricPayload> objects = new ArrayDeque<>();
+
+    public static void generateGrafanaData(float[] frameMetrics,String activityName){
+        if(activityName !=null){
+            MetricPayload metricPayload = new MetricPayload();
+            MetricsDeviceMeta deviceMeta = new MetricsDeviceMeta();
+
+            KeyMetric jankyFrameCountMetric = new KeyMetric();
+            KeyMetric jankyFrameTotalMetric = new KeyMetric();
+            //KeyMetric jankyFramePercentMetric = new KeyMetric();
+            KeyMetric jankyFrameTimeMetric = new KeyMetric();
+
+            try{
+                if(counter < 10){
+                    jankyFrameCountMetric.setMethodName(activityName);
+                    jankyFrameCountMetric.setMetricType("jankyFrames");
+                    jankyFrameCountMetric.setValue(Double.valueOf(decimalFormat.format(frameMetrics[0])));
+                    jankyFrameCountMetric.setMetricAggregator("SUM");
+
+                    jankyFrameTotalMetric.setMethodName(activityName);
+                    jankyFrameTotalMetric.setMetricType("TotalFrames");
+                    jankyFrameTotalMetric.setValue(Double.valueOf(decimalFormat.format(frameMetrics[1])));
+                    jankyFrameTotalMetric.setMetricAggregator("SUM");
+
+//                    jankyFramePercentMetric.setMethodName(activityName);
+//                    jankyFramePercentMetric.setMetricType("jankyFramesPercentage");
+//                    jankyFramePercentMetric.setValue(Double.valueOf(decimalFormat.format(frameMetrics[2])));
+//                    jankyFramePercentMetric.setMetricAggregator("AVG");
+
+                    jankyFrameTimeMetric.setMethodName(activityName);
+                    jankyFrameTimeMetric.setMetricType("frameTime");
+                    jankyFrameTimeMetric.setValue(Double.valueOf(decimalFormat.format(frameMetrics[2])));
+                    jankyFrameTimeMetric.setMetricAggregator("AVG");
+
+                    keyMetricList.add(jankyFrameCountMetric);
+                    keyMetricList.add(jankyFrameTotalMetric);
+                    //keyMetricList.add(jankyFramePercentMetric);
+                    keyMetricList.add(jankyFrameTimeMetric);
+                    counter++;
+                }
+                else {
+                    deviceMeta.setDeviceName(Build.MODEL.replace(" ","-"));
+                    deviceMeta.setApkVersion(BuildConfig.VERSION_NAME);
+                    deviceMeta.setPlatform("Android" + Build.VERSION.SDK_INT);
+                    metricPayload.setDeviceMeta(deviceMeta);
+                    metricPayload.setMetrics(keyMetricList);
+                    publishData(metricPayload);
+                    keyMetricList.clear();
+                    counter =0;
+                    Log.v("FrameMetrics","clear counter");
+                }
+            }catch (Exception e){
+                LogUtil.log("FrameMetrics",e.getMessage());
+            }
+        }
+    }
+
+    private static void publishData(MetricPayload metricPayload) {
+        try{
+            CreateDBRequest.createAPIRequest(metricPayload);
+        }catch (Exception e){
+            LogUtil.log("FrameMetrics",e.getMessage());
+        }
+    }
+}
