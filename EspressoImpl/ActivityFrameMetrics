@@ -1,0 +1,153 @@
+package com.mmt.travel.app.testmetrictracer;
+
+import android.annotation.TargetApi;
+import android.app.Activity;
+import android.app.Application;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Handler;
+import android.util.Log;
+import android.view.FrameMetrics;
+import android.view.Window;
+
+import com.flipkart.batching.toolbox.LogUtil;
+import com.mmt.travel.app.mobile.MMTApplication;
+
+/**
+ * Created by mmt6054 on 12/07/18.
+ */
+
+    public class ActivityFrameMetrics implements Application.ActivityLifecycleCallbacks {
+        private static final float DEFAULT_WARNING_LEVEL_MS = 17.f;
+        private static final float DEFAULT_ERROR_LEVEL_MS = 34.f;
+
+
+    @Override
+        public void onActivityCreated(Activity activity, Bundle savedInstanceState) {
+
+        }
+
+        @Override
+        public void onActivityStarted(Activity activity) {
+
+        }
+
+        @Override
+        public void onActivityResumed(Activity activity) {
+            startFrameMetrics(activity);
+        }
+
+        @Override
+        public void onActivityPaused(Activity activity) {
+            stopFrameMetrics(activity);
+        }
+
+        @Override
+        public void onActivityStopped(Activity activity) {
+
+        }
+
+        @Override
+        public void onActivitySaveInstanceState(Activity activity, Bundle outState) {
+
+        }
+
+        @Override
+        public void onActivityDestroyed(Activity activity) {
+
+        }
+
+        private float warningLevelMs;
+
+        Window.OnFrameMetricsAvailableListener listener;
+
+        private ActivityFrameMetrics() {
+        }
+
+        @TargetApi(Build.VERSION_CODES.N)
+        public void startFrameMetrics(Activity activity) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !MMTApplication.isEspressoRunning) {
+                final String activityName = activity.getClass().getSimpleName();
+                 this.listener = new Window.OnFrameMetricsAvailableListener() {
+
+                    private float allFrames = 0;
+                    private float jankyFrames = 0;
+                    private float jankyPercent = 0;
+                    @Override
+                    public void onFrameMetricsAvailable(Window window, FrameMetrics frameMetrics, int dropCountSinceLastInvocation) {
+                        FrameMetrics frameMetricsCopy = new FrameMetrics(frameMetrics);
+                        allFrames++;
+                        float totalDurationMs = (float) (0.000001 * frameMetricsCopy.getMetric(FrameMetrics.TOTAL_DURATION));
+                        if (totalDurationMs > warningLevelMs) {
+                            jankyFrames++;
+                            if(jankyFrames >0){
+                                jankyPercent = (float) jankyFrames / allFrames * 100;
+                            }
+
+
+                            float frameTime = totalDurationMs;
+                            float[] jankyFrameArray = new float[]{jankyFrames,allFrames,frameTime};
+                            new Thread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    if(jankyFrameArray.length==3){
+                                        ActivityFrameMetricBuilder.generateGrafanaData(jankyFrameArray,activityName);
+                                    }
+                                }
+                            }).start();
+
+                            LogUtil.log("FrameMetrics","frame detected");
+                        }
+                    }
+                };
+                activity.getWindow().addOnFrameMetricsAvailableListener(listener, new Handler());
+            } else {
+                Log.w("FrameMetrics", "FrameMetrics can work only with Android SDK 24 (Nougat) and higher");
+            }
+        }
+
+        @TargetApi(Build.VERSION_CODES.N)
+        public void stopFrameMetrics(Activity activity) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !MMTApplication.isEspressoRunning) {
+                if (this.listener != null) {
+                    activity.getWindow().removeOnFrameMetricsAvailableListener(this.listener);
+                }
+            }
+        }
+
+    public static class Builder {
+            private float warningLevelMs = DEFAULT_WARNING_LEVEL_MS;
+            private float errorLevelMs = DEFAULT_ERROR_LEVEL_MS;
+            private boolean showWarnings = true;
+            private boolean showErrors = true;
+
+            public Builder() {
+            }
+
+            public Builder warningLevelMs(float warningLevelMs) {
+                this.warningLevelMs = warningLevelMs;
+                return this;
+            }
+
+            public Builder errorLevelMs(float errorLevelMs) {
+                this.errorLevelMs = errorLevelMs;
+                return this;
+            }
+
+            public Builder showWarnings(boolean show) {
+                this.showWarnings = show;
+                return this;
+            }
+
+            public Builder showErrors(boolean show) {
+                this.showErrors = show;
+                return this;
+            }
+
+            public ActivityFrameMetrics build() {
+                ActivityFrameMetrics activityFrameMetrics = new ActivityFrameMetrics();
+                activityFrameMetrics.warningLevelMs = this.warningLevelMs;
+                return activityFrameMetrics;
+            }
+        }
+    }
